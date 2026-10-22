@@ -1,0 +1,1288 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="description" content="Fronteras de países dibujadas con epiciclos: series de Fourier animadas con p5.js.">
+  <title>Epiciclos de Fourier</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a0a0a'/%3E%3Ccircle cx='14' cy='17' r='9' fill='none' stroke='%23ffc35a' stroke-width='2'/%3E%3Ccircle cx='22' cy='10' r='3' fill='%23ffc35a'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0a0a0a;
+      --panel: #0f0f0f;
+      --surface: #161616;
+      --line: #1f1f1f;
+      --line-strong: #2c2c2c;
+      --text: #ffffff;
+      --soft: #c9c9c9;
+      --muted: #8c8c8c;
+      --accent: #ffc35a;
+      --accent-ink: #1c1405;
+      --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
+    body:has(dialog[open]) { overflow: hidden; }
+    button, input, select { font: inherit; color: inherit; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    [hidden] { display: none !important; }
+
+    /* Layout: stage + side panel; stacked on narrow screens. */
+    .app { display: grid; grid-template-columns: minmax(0, 1fr) 320px; height: 100vh; height: 100dvh; }
+    .stage { position: relative; min-width: 0; overflow: hidden; background: var(--bg); }
+    #canvas-host { position: absolute; inset: 0; }
+    #canvas-host canvas { display: block; }
+
+    /* On-canvas text */
+    .hud { position: absolute; pointer-events: none; text-shadow: 0 0 14px var(--bg), 0 0 4px var(--bg); }
+    .hud-top { top: 24px; left: 28px; right: 190px; }
+    .hud-top h1 { margin: 0; font-size: 30px; line-height: 1.1; font-weight: 600; letter-spacing: -0.02em; }
+    .hud-top p { margin: 8px 0 0; font: 12px var(--mono); color: var(--muted); }
+    .hud-bottom { left: 28px; bottom: 24px; display: flex; gap: 36px; }
+    .stat-label { display: block; font: 11px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+    .stat-value { font: 500 30px/1 var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; white-space: nowrap; }
+    .stat-value small { font-size: 13px; color: var(--muted); letter-spacing: 0; margin-left: 4px; }
+    #n-value { color: var(--accent); }
+
+    .about-open { position: absolute; top: 22px; right: 24px; z-index: 3; display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px 0 10px; border-radius: 999px; border: 1px solid var(--line-strong); background: rgba(20, 20, 20, 0.85); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); font-size: 13px; font-weight: 600; cursor: pointer; }
+    .about-open:hover { border-color: rgba(255, 195, 90, 0.6); }
+    .about-open svg { color: var(--accent); }
+
+    .message { position: absolute; inset: 0; z-index: 2; display: grid; place-content: center; justify-items: center; gap: 10px; padding: 24px; text-align: center; background: rgba(10, 10, 10, 0.88); }
+    .message h2 { margin: 0; font-size: 20px; font-weight: 600; }
+    .message p { margin: 0; max-width: 340px; color: var(--muted); font-size: 13px; }
+    .message button { margin-top: 8px; }
+
+    /* Panel */
+    .panel { display: flex; flex-direction: column; gap: 26px; padding: 28px 24px 22px; background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand strong { display: block; font-size: 15px; font-weight: 600; }
+    .brand span { display: block; font-size: 12px; color: var(--muted); }
+    .field { display: flex; flex-direction: column; gap: 12px; }
+    .field label, .field-head label { font-size: 13px; color: var(--soft); }
+    .field-head { display: flex; align-items: baseline; justify-content: space-between; }
+    .field-head output { font: 500 15px var(--mono); font-variant-numeric: tabular-nums; }
+    .field-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; font: 12px var(--mono); color: var(--muted); }
+    .chip { font: 600 11px var(--sans); color: var(--accent); background: rgba(255, 195, 90, 0.1); border: 1px solid rgba(255, 195, 90, 0.25); border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+    .divider { height: 1px; background: var(--line); margin: 0; border: 0; }
+
+    .select { position: relative; }
+    select { appearance: none; -webkit-appearance: none; width: 100%; padding: 11px 38px 11px 12px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px; font-size: 14px; cursor: pointer; }
+    select:hover { border-color: #3d3d3d; }
+    .select svg { position: absolute; right: 13px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+
+    input[type="range"] { --fill: 50%; -webkit-appearance: none; appearance: none; width: 100%; height: 20px; margin: 0; background: transparent; cursor: pointer; touch-action: pan-y; }
+    input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 4px; background: linear-gradient(to right, var(--accent) var(--fill), var(--line-strong) var(--fill)); }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; margin-top: -6px; border-radius: 50%; background: #fff; border: 0; box-shadow: 0 0 0 4px rgba(255, 195, 90, 0.2); }
+    input[type="range"]::-moz-range-track { height: 4px; border-radius: 4px; background: var(--line-strong); }
+    input[type="range"]::-moz-range-progress { height: 4px; border-radius: 4px; background: var(--accent); }
+    input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 0 0 4px rgba(255, 195, 90, 0.2); }
+
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .btn { height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); font-size: 14px; font-weight: 600; cursor: pointer; }
+    .btn:hover { border-color: #444; }
+    .btn:disabled { opacity: 0.4; cursor: default; }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+    .btn-primary:hover { background: #ffd286; border-color: #ffd286; }
+
+    .toggles { display: flex; flex-direction: column; gap: 14px; }
+    .toggle { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--soft); cursor: pointer; }
+    .toggle input { -webkit-appearance: none; appearance: none; position: relative; flex: none; width: 32px; height: 18px; margin: 0; border-radius: 9px; background: var(--line-strong); cursor: pointer; transition: background 0.15s; }
+    .toggle input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); transition: transform 0.15s, background 0.15s; }
+    .toggle input:checked { background: rgba(255, 195, 90, 0.3); }
+    .toggle input:checked::after { transform: translateX(14px); background: var(--accent); }
+    .toggle svg { flex: none; color: var(--muted); }
+
+    .panel-links { margin-top: auto; padding-top: 16px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 6px 10px; font-size: 12px; color: #6f6f6f; }
+    .link { padding: 0; border: 0; background: none; color: var(--muted); font-size: 12px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+    .link:hover { color: var(--text); }
+
+    /* "¿Qué es esto?" screen */
+    .about { width: min(860px, calc(100vw - 48px)); height: calc(100vh - 48px); height: calc(100dvh - 48px); max-width: none; max-height: none; margin: auto; padding: 0; border: 1px solid var(--line-strong); border-radius: 16px; background: #0d0d0d; color: var(--text); }
+    .about[open] { display: flex; flex-direction: column; }
+    .about::backdrop { background: rgba(0, 0, 0, 0.72); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+    .about-bar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px 10px 24px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+    .icon-btn { width: 36px; height: 36px; display: grid; place-items: center; padding: 0; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); cursor: pointer; }
+    .icon-btn:hover { border-color: #444; }
+    .about-body { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 48px 56px 64px; }
+    .about-body:focus { outline: none; }
+    .about-body > * { max-width: 680px; margin-left: auto; margin-right: auto; }
+    .eyebrow { margin: 0; font: 12px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+    .about h2 { margin: 12px 0 16px; font-size: clamp(30px, 4.2vw, 42px); line-height: 1.08; letter-spacing: -0.025em; font-weight: 650; }
+    .lead { margin: 0; font-size: 18px; line-height: 1.6; color: var(--soft); }
+    .chapter { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 0 18px; margin-top: 44px; padding-top: 40px; border-top: 1px solid var(--line); }
+    .chapter-num { width: 32px; height: 32px; display: grid; place-items: center; margin-top: 2px; border-radius: 50%; border: 1px solid rgba(255, 195, 90, 0.5); color: var(--accent); font: 600 13px var(--mono); }
+    .chapter h3 { margin: 4px 0 12px; font-size: 23px; line-height: 1.25; letter-spacing: -0.01em; font-weight: 650; }
+    .chapter p, .chapter li { font-size: 16px; line-height: 1.65; color: #d2d2d2; }
+    .chapter p { margin: 0 0 14px; }
+    .chapter ul { margin: 0 0 14px; padding-left: 20px; }
+    .chapter strong { color: #fff; font-weight: 600; }
+    .fact { margin: 18px 0 0; padding: 14px 16px; border-left: 2px solid var(--accent); border-radius: 0 8px 8px 0; background: rgba(255, 195, 90, 0.06); font-size: 15px !important; }
+
+    .demo { margin: 22px 0 8px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--bg); }
+    .demo canvas { display: block; width: 100%; height: 220px; }
+    .demo canvas.tall { height: 300px; }
+    .demo figcaption { padding: 12px 16px; border-top: 1px solid var(--line); font-size: 13px; line-height: 1.5; color: var(--muted); }
+    .demo-controls { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-top: 1px solid var(--line); }
+    .demo-controls label { font-size: 13px; color: var(--soft); }
+    .demo-controls input { flex: 1; }
+    .demo-controls output { min-width: 150px; text-align: right; font: 500 13px var(--mono); font-variant-numeric: tabular-nums; color: var(--soft); }
+    .strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .strip > div + div { border-left: 1px solid var(--line); }
+    .strip canvas { height: auto; aspect-ratio: 1; }
+    .strip span { display: block; padding: 8px 10px; border-top: 1px solid var(--line); font: 12px/1.5 var(--mono); color: var(--muted); }
+    .strip b { color: var(--accent); font-weight: 500; }
+
+    .legend-list { list-style: none; margin: 8px 0 20px; padding: 0 !important; display: grid; gap: 14px; }
+    .legend-list li { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; align-items: start; }
+    .legend-list svg { margin-top: 3px; }
+    .modes { width: 100%; margin: 6px 0 18px; border-collapse: collapse; font-size: 14px; }
+    .modes th, .modes td { padding: 9px 10px; text-align: left; border-bottom: 1px solid var(--line); color: #d2d2d2; }
+    .modes th { font: 11px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 400; }
+    .modes td:first-child { color: var(--accent); white-space: nowrap; }
+    .uses { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+    .uses div { padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: #111; }
+    .uses strong { display: block; margin-bottom: 4px; }
+    .uses p { margin: 0; font-size: 14px; line-height: 1.55; color: var(--muted); }
+
+    details.deep { margin-top: 44px; padding: 0 20px; border: 1px solid var(--line); border-radius: 12px; background: #101010; }
+    details.deep summary { padding: 16px 0; font-weight: 600; cursor: pointer; }
+    details.deep summary span { color: var(--muted); font-weight: 400; }
+    details.deep p, details.deep li { font-size: 15px; line-height: 1.65; color: #d2d2d2; }
+    details.deep ul { padding-left: 20px; }
+    .formula { margin: 12px 0 18px; padding: 14px; overflow-x: auto; white-space: nowrap; text-align: center; border: 1px solid var(--line); border-radius: 8px; color: #fff; font: 19px/1.6 "Cambria Math", "STIX Two Math", Georgia, serif; }
+
+    .credits-section { margin-top: 44px; padding-top: 40px; border-top: 1px solid var(--line); }
+    .credits-section h3 { margin: 0 0 12px; font-size: 23px; font-weight: 650; }
+    .credits-list > div { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 16px; padding: 16px 0; border-top: 1px solid var(--line); }
+    .credit-label { padding-top: 3px; font: 11px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+    .credits-list p { margin: 0 0 8px; font-size: 15px; line-height: 1.6; color: #d2d2d2; }
+    .credits-list p:last-child { margin-bottom: 0; }
+    .credits-list strong { color: #fff; font-weight: 600; }
+    .credits-list a { color: var(--accent); text-underline-offset: 3px; }
+    .disclaimer { margin: 18px 0 0; font-size: 13px; color: var(--muted); }
+    .about-end { margin-top: 36px; display: flex; justify-content: center; }
+
+    @media (max-width: 860px) {
+      .app { grid-template-columns: 1fr; height: auto; }
+      .stage { height: 70vh; height: 70svh; min-height: 380px; }
+      .panel { border-left: 0; border-top: 1px solid var(--line); padding: 24px 16px 20px; overflow: visible; }
+      .hud-top { top: 16px; left: 16px; right: 160px; }
+      .hud-top h1 { font-size: 24px; }
+      .hud-bottom { left: 16px; bottom: 16px; gap: 28px; }
+      .stat-value { font-size: 24px; }
+      .about-open { top: 14px; right: 14px; }
+      .brand { display: none; }
+      input[type="range"] { height: 28px; }
+      input[type="range"]::-webkit-slider-thumb { width: 22px; height: 22px; margin-top: -9px; }
+      input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; }
+      .btn { height: 46px; }
+
+      .about { width: 100%; height: 100%; border: 0; border-radius: 0; }
+      .about-bar { padding-left: 18px; }
+      .about-body { padding: 28px 18px 48px; }
+      .lead { font-size: 17px; }
+      .chapter { grid-template-columns: minmax(0, 1fr); margin-top: 36px; padding-top: 32px; }
+      .chapter-num { margin-bottom: 12px; }
+      .chapter h3 { font-size: 21px; }
+      .demo-controls { flex-wrap: wrap; }
+      .demo-controls output { min-width: 0; width: 100%; text-align: left; }
+      .strip { grid-template-columns: repeat(5, 132px); overflow-x: auto; scroll-snap-type: x mandatory; }
+      .strip > div { scroll-snap-align: start; }
+      .uses { grid-template-columns: minmax(0, 1fr); }
+      .credits-list > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+      details.deep { padding: 0 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <main class="stage">
+      <div id="canvas-host" role="img" aria-label="Animación: la frontera del país dibujada por epiciclos de Fourier"></div>
+      <div class="hud hud-top" id="hud-top">
+        <h1 id="country-name">Colombia</h1>
+        <p id="country-meta">&nbsp;</p>
+      </div>
+      <div class="hud hud-bottom" id="hud-bottom">
+        <div><span class="stat-label">N · círculos</span><span class="stat-value"><span id="n-value">—</span><small id="n-target"></small></span></div>
+        <div><span class="stat-label">Error medio</span><span class="stat-value"><span id="error-value">—</span><small>%</small></span></div>
+      </div>
+      <div class="message" id="message" role="status" hidden>
+        <h2 id="message-title">Cargando…</h2>
+        <p id="message-detail"></p>
+        <button class="btn" id="retry-button" type="button" hidden>Reintentar</button>
+      </div>
+      <button class="about-open" type="button" data-about="">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M6.9 7a2.1 2.1 0 1 1 3 1.9c-.6.3-.9.8-.9 1.4v.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="9" cy="12.9" r=".9" fill="currentColor"/></svg>
+        ¿Qué es esto?
+      </button>
+    </main>
+
+    <aside class="panel" aria-label="Controles">
+      <div class="brand">
+        <svg width="34" height="34" viewBox="0 0 34 34" fill="none" aria-hidden="true"><circle cx="15" cy="19" r="10" stroke="#fff" stroke-opacity=".35"/><circle cx="23" cy="12" r="5" stroke="#fff" stroke-opacity=".35"/><path d="M15 19 23 12 27 9" stroke="#fff" stroke-opacity=".6"/><circle cx="27" cy="9" r="2.5" fill="#ffc35a"/></svg>
+        <div><strong>Epiciclos de Fourier</strong><span>Fronteras dibujadas con círculos</span></div>
+      </div>
+
+      <div class="field">
+        <label for="country-select">País</label>
+        <div class="select">
+          <select id="country-select">
+            <option value="colombia">Colombia</option>
+            <option value="mexico">México</option>
+            <option value="spain">España</option>
+            <option value="united-states">Estados Unidos</option>
+            <option value="argentina">Argentina</option>
+            <option value="japan">Japón</option>
+            <option value="italy">Italia</option>
+          </select>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="m3 4.5 3 3 3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <div class="field">
+        <div class="field-head"><label for="precision">Precisión</label><output id="precision-value" for="precision">50 %</output></div>
+        <input id="precision" type="range" min="0" max="100" step="1" value="50">
+        <div class="field-foot"><span class="chip" id="mode-label">Modo Detalle</span><span id="target-label">512 círculos</span></div>
+      </div>
+
+      <div class="field">
+        <div class="field-head"><label for="speed">Velocidad</label><output id="speed-value" for="speed">1,0×</output></div>
+        <input id="speed" type="range" min="0.1" max="3" step="0.1" value="1">
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary" id="play-button" type="button" disabled>
+          <svg id="icon-pause" width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><rect x="2" y="1.5" width="3" height="9" rx=".6"/><rect x="7" y="1.5" width="3" height="9" rx=".6"/></svg>
+          <svg id="icon-play" width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true" hidden><path d="M3 1.6v8.8a.6.6 0 0 0 .9.5l7-4.4a.6.6 0 0 0 0-1L3.9 1.1a.6.6 0 0 0-.9.5Z"/></svg>
+          <span id="play-label">Pausar</span>
+        </button>
+        <button class="btn" id="reset-button" type="button" disabled>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 8a5.5 5.5 0 1 0 1.7-4M2.5 2v3.5H6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Reiniciar
+        </button>
+      </div>
+
+      <hr class="divider">
+
+      <div class="toggles">
+        <label class="toggle"><input id="show-circles" type="checkbox" checked>
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><circle cx="8" cy="10" r="6" stroke="currentColor"/><circle cx="13" cy="5" r="2.5" stroke="currentColor"/></svg>
+          Mostrar epiciclos</label>
+        <label class="toggle"><input id="show-original" type="checkbox" checked>
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M1 9h16" stroke="currentColor" stroke-dasharray="3 3"/></svg>
+          Mostrar frontera original</label>
+      </div>
+
+      <p class="panel-links">
+        <button class="link" type="button" data-about="">Cómo funciona</button>
+        <span aria-hidden="true">·</span>
+        <button class="link" type="button" data-about="credits">Créditos y fuentes</button>
+      </p>
+    </aside>
+  </div>
+
+  <dialog class="about" id="about" aria-labelledby="about-title">
+    <div class="about-bar">
+      <span>Cómo funciona</span>
+      <button class="icon-btn" type="button" id="about-close" aria-label="Cerrar">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="m3 3 8 8m0-8-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="about-body" id="about-body" tabindex="-1">
+      <header>
+        <p class="eyebrow">¿Qué es esto?</p>
+        <h2 id="about-title">Un país dibujado solo con círculos que giran</h2>
+        <p class="lead">Lo que ves no es una imagen del mapa: es un lápiz movido por cadenas de círculos que giran, cada uno a su propio ritmo. Con suficientes círculos se puede dibujar cualquier frontera, con todo el detalle que quieras. La idea viene de un matemático francés, Joseph Fourier, hace unos 200 años.</p>
+      </header>
+
+      <section class="chapter">
+        <span class="chapter-num">1</span>
+        <div>
+          <h3>Un círculo que gira</h3>
+          <p>Imagina la manecilla de un reloj con un lápiz en la punta. Cuando da una vuelta completa, el lápiz dibuja un círculo. Es lo más sencillo que puede hacer un círculo que gira, y es el punto de partida de todo lo demás.</p>
+          <figure class="demo">
+            <canvas id="demo-one" aria-label="Un círculo girando dibuja un círculo"></canvas>
+            <figcaption>1 círculo: el lápiz dibuja un círculo.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="chapter">
+        <span class="chapter-num">2</span>
+        <div>
+          <h3>Círculos sobre círculos</h3>
+          <p>Ahora pon una segunda manecilla, más pequeña, en la punta de la primera. Y otra sobre esa. Cada una gira a su propia velocidad, algunas incluso hacia atrás. El lápiz, en la última punta, ya no dibuja un círculo: dibuja formas nuevas. A estos círculos encadenados se les llama <strong>epiciclos</strong>.</p>
+          <p>Pruébalo: este corazón se dibuja exactamente con 8 círculos. Mueve el control y mira qué pasa con menos.</p>
+          <figure class="demo">
+            <canvas class="tall" id="demo-heart" aria-label="Un corazón dibujado con círculos"></canvas>
+            <div class="demo-controls">
+              <label for="heart-n">Círculos</label>
+              <input id="heart-n" type="range" min="1" max="8" step="1" value="3">
+              <output id="heart-value" for="heart-n"></output>
+            </div>
+          </figure>
+          <p class="fact">Dato curioso: hace casi 2.000 años, el astrónomo Ptolomeo ya usaba epiciclos para predecir por dónde se moverían los planetas en el cielo.</p>
+        </div>
+      </section>
+
+      <section class="chapter">
+        <span class="chapter-num">3</span>
+        <div>
+          <h3>La frontera se vuelve un recorrido</h3>
+          <p>Una frontera es una línea cerrada: si caminas por el borde de un país, terminas donde empezaste. Sobre ese borde se reparten 4.096 puntos, todos a la misma distancia, como las huellas de alguien que camina a paso constante.</p>
+          <p>La tarea de los círculos es que el lápiz pase por esas huellas, en orden, durante una vuelta.</p>
+          <figure class="demo js-needs-model">
+            <canvas class="tall" id="demo-points" aria-label="Puntos repartidos sobre la frontera"></canvas>
+            <figcaption>Se muestran <span id="points-shown">128</span> de los 4.096 puntos de <span class="js-country">Colombia</span> (1 de cada 32). En amarillo, dónde empieza el recorrido: el punto más al norte de cada contorno. Desde ahí avanza en el sentido de las agujas del reloj.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="chapter">
+        <span class="chapter-num">4</span>
+        <div>
+          <h3>Fourier encuentra los círculos</h3>
+          <p>Aquí entra la matemática. Un cálculo llamado <strong>transformada de Fourier</strong> mira todas las huellas y responde una pregunta: ¿qué círculos necesito para dibujar este recorrido? De cada círculo dice tres cosas:</p>
+          <ul>
+            <li><strong>Tamaño:</strong> qué tan larga es su manecilla.</li>
+            <li><strong>Velocidad:</strong> cuántas vueltas da mientras el lápiz recorre la frontera una vez (1, 2, 3… o hacia atrás).</li>
+            <li><strong>Punto de partida:</strong> hacia dónde apunta al comenzar.</li>
+          </ul>
+          <p>Es como escuchar un acorde de guitarra y descubrir qué notas lo forman: Fourier separa una forma complicada en movimientos simples.</p>
+          <p>Después, los círculos se ordenan del más grande al más pequeño. Los grandes dibujan la silueta general. Los pequeños y rápidos agregan los detalles: bahías, penínsulas, cabos.</p>
+        </div>
+      </section>
+
+      <section class="chapter">
+        <span class="chapter-num">5</span>
+        <div>
+          <h3>Más círculos, más parecido</h3>
+          <p>Con 1 círculo, cualquier país es un círculo. Con unos pocos aparece una mancha con su forma general. Con cientos ya se reconocen las costas. Y con todos, el lápiz pasa exactamente por cada uno de los 4.096 puntos: el error es cero.</p>
+          <figure class="demo js-needs-model">
+            <div class="strip" id="strip"></div>
+            <figcaption><span class="js-country">Colombia</span> con cada vez más círculos. La línea punteada es la frontera real.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="chapter">
+        <span class="chapter-num">6</span>
+        <div>
+          <h3>¿Y las islas?</h3>
+          <p>Japón, Italia o Estados Unidos no son una sola línea: tienen islas. Si un único lápiz tuviera que saltar de una isla a otra, los círculos tendrían que dar un brinco que no pueden dar (siempre giran de forma suave) y aparecerían garabatos.</p>
+          <p>Por eso cada isla grande tiene sus propios círculos y su propio lápiz, y todas terminan la vuelta al mismo tiempo. Las islas muy pequeñas (menos del 0,65 % del territorio principal) no se dibujan.</p>
+        </div>
+      </section>
+
+      <section class="chapter">
+        <span class="chapter-num">7</span>
+        <div>
+          <h3>Cómo leer la pantalla</h3>
+          <ul class="legend-list">
+            <li><svg width="30" height="20" viewBox="0 0 30 20" fill="none" aria-hidden="true"><circle cx="11" cy="10" r="8" stroke="#fff" stroke-opacity=".45"/><circle cx="22" cy="6" r="4" stroke="#fff" stroke-opacity=".45"/></svg><span><strong>Círculos grises:</strong> los epiciclos girando.</span></li>
+            <li><svg width="30" height="20" viewBox="0 0 30 20" fill="none" aria-hidden="true"><path d="M2 14c6-9 12 3 18-4s6-4 8-4" stroke="#ffc35a" stroke-width="2.4" stroke-linecap="round"/></svg><span><strong>Línea amarilla:</strong> lo que dibuja el lápiz. El punto amarillo es el lápiz.</span></li>
+            <li><svg width="30" height="20" viewBox="0 0 30 20" fill="none" aria-hidden="true"><path d="M2 10h26" stroke="#fff" stroke-opacity=".5" stroke-dasharray="3 4"/></svg><span><strong>Línea punteada:</strong> la frontera real, para comparar.</span></li>
+          </ul>
+          <p><strong>N · círculos</strong> es cuántos círculos se usan en ese momento. Cada dibujo empieza con 1 y va sumando hasta llegar a la precisión que elegiste, antes de terminar la primera vuelta.</p>
+          <p><strong>Error medio</strong> es qué tan lejos queda, en promedio, la línea amarilla de la frontera real, comparado con el tamaño del mapa. Si el mapa midiera 1 metro, un error de 1 % sería 1 centímetro.</p>
+          <p><strong>Precisión</strong> elige cuántos círculos usar:</p>
+          <table class="modes">
+            <thead><tr><th>Modo</th><th>Círculos</th><th>Resultado</th></tr></thead>
+            <tbody>
+              <tr><td>Dibujo</td><td>16</td><td>Forma muy aproximada</td></tr>
+              <tr><td>Boceto</td><td>64 a 256</td><td>Contorno reconocible</td></tr>
+              <tr><td>Detalle</td><td>512 a 1.024</td><td>Alta precisión</td></tr>
+              <tr><td>0 Error</td><td>2.048 a todos</td><td>Casi perfecto; exacto al 100 %</td></tr>
+            </tbody>
+          </table>
+          <p><strong>Velocidad</strong> cambia qué tan rápido giran los círculos, de 0,1× a 3×.</p>
+        </div>
+      </section>
+
+      <section class="chapter">
+        <span class="chapter-num">8</span>
+        <div>
+          <h3>¿Dónde más se usa Fourier?</h3>
+          <p>Separar algo complicado en ondas o giros simples es una de las ideas más útiles de la ciencia. Está en cosas que usas todos los días:</p>
+          <div class="uses">
+            <div><strong>Música</strong><p>Los MP3 y el streaming guardan las canciones por frecuencias para que ocupen menos espacio.</p></div>
+            <div><strong>Fotos</strong><p>El formato JPEG comprime imágenes con una transformada «prima» de la de Fourier.</p></div>
+            <div><strong>Reconocer canciones</strong><p>Apps como Shazam comparan el «mapa» de frecuencias de lo que suena.</p></div>
+            <div><strong>Medicina</strong><p>Las resonancias magnéticas reconstruyen imágenes del cuerpo con transformadas de Fourier.</p></div>
+            <div><strong>Wi‑Fi y celular</strong><p>Tus datos viajan repartidos en muchas frecuencias a la vez.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <details class="deep">
+        <summary>Para curiosos: la matemática <span>(nivel colegio avanzado / universidad)</span></summary>
+        <p>Cada punto de la frontera se escribe como un número complejo <i>z</i> = <i>x</i> + <i>i</i>·<i>y</i>. Con <i>M</i> puntos, la transformada discreta de Fourier calcula un coeficiente para cada velocidad <i>k</i>:</p>
+        <div class="formula"><i>c<sub>k</sub></i> = (1/<i>M</i>) · Σ<sub><i>n</i>=0…<i>M</i>−1</sub> <i>z<sub>n</sub></i> · e<sup>−2π<i>i</i>·<i>kn</i>/<i>M</i></sup></div>
+        <p>Y el recorrido se reconstruye sumando giros, con <i>t</i> de 0 a 1 (una vuelta):</p>
+        <div class="formula"><i>z</i>(<i>t</i>) = Σ<sub><i>k</i></sub> <i>c<sub>k</sub></i> · e<sup>2π<i>i</i>·<i>k</i>·<i>t</i></sup></div>
+        <p>Cada término es un círculo: radio |<i>c<sub>k</sub></i>|, velocidad <i>k</i> vueltas por recorrido y ángulo inicial arg(<i>c<sub>k</sub></i>). El término con <i>k</i> = 0 no gira: es el centro fijo de cada contorno.</p>
+        <ul>
+          <li><strong>Qué círculos usar.</strong> Para un solo contorno, quedarse con los <i>N</i> círculos más grandes es la mejor elección posible si el error se mide como distancia al cuadrado (teorema de Parseval). El «error medio» de la pantalla usa la distancia normal y, con varias islas, ordenar por tamaño es una buena regla, no la óptima.</li>
+          <li><strong>Puntos.</strong> 4.096 en total, repartidos según la longitud de cada contorno (mínimo 64 por isla). Solo se usa el borde exterior: los huecos interiores, como el Vaticano y San Marino dentro de Italia, no se dibujan.</li>
+          <li><strong>Proyección.</strong> Azimutal equivalente de Lambert, centrada en el país: conserva las áreas y, a la escala de un país, deforma poco las formas.</li>
+          <li><strong>Cálculo.</strong> FFT de base 2 y, para tamaños que no son potencia de 2, el algoritmo de Bluestein. Todo se calcula en tu navegador.</li>
+          <li><strong>Error medio</strong> = promedio de |<i>z<sub>n</sub></i> − <i>ẑ<sub>n</sub></i>| ÷ diagonal del mapa × 100.</li>
+        </ul>
+      </details>
+
+      <section class="credits-section" id="credits">
+        <h3>Créditos y fuentes</h3>
+        <div class="credits-list">
+          <div>
+            <span class="credit-label">Fronteras</span>
+            <div>
+              <p><strong>Natural Earth</strong> · <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener noreferrer">naturalearthdata.com</a></p>
+              <p>Mapas libres de dominio público, creados por Tom Patterson, Nathaniel Vaughn Kelso y otros voluntarios, con el apoyo de NACIS (North American Cartographic Information Society). Se usa la versión a escala 1:50 millones.</p>
+              <p id="credit-data">De Natural Earth, esta página solo usa la forma de cada frontera: listas de coordenadas (longitud y latitud). Todo lo demás se calcula aquí.</p>
+            </div>
+          </div>
+          <div>
+            <span class="credit-label">Dibujo</span>
+            <div><p><strong>p5.js</strong> · <a href="https://p5js.org/" target="_blank" rel="noopener noreferrer">p5js.org</a> · librería libre (licencia LGPL 2.1) para dibujar en el navegador.</p></div>
+          </div>
+          <div>
+            <span class="credit-label">Idea</span>
+            <div><p><strong>Joseph Fourier</strong> (1768–1830), matemático francés. Mostró que formas y ondas que se repiten pueden escribirse como sumas de ondas simples.</p></div>
+          </div>
+        </div>
+        <p class="disclaimer">Esta página no está afiliada a Natural Earth ni a p5.js.</p>
+      </section>
+
+      <div class="about-end"><button class="btn btn-primary" type="button" id="about-done">Volver al dibujo</button></div>
+    </div>
+  </dialog>
+
+  <!-- Pure math: no DOM access, so it can also be tested outside the browser. -->
+  <script id="fourier-math">
+    const Fourier = (() => {
+      const TAU = 2 * Math.PI;
+      const SAMPLE_COUNT = 4096;       // total boundary points shared by all kept rings
+      const MIN_ISLAND_RATIO = 0.0065; // islands smaller than 0.65% of the main landmass are left out
+      const MIN_RING_SAMPLES = 64;
+
+      // ---------- Transforms ----------
+
+      const twiddleCache = new Map();
+      function twiddles(n) {
+        let t = twiddleCache.get(n);
+        if (!t) {
+          t = { cos: new Float64Array(n / 2), sin: new Float64Array(n / 2) };
+          for (let k = 0; k < n / 2; k++) { t.cos[k] = Math.cos(TAU * k / n); t.sin[k] = Math.sin(TAU * k / n); }
+          twiddleCache.set(n, t);
+        }
+        return t;
+      }
+
+      // In-place radix-2 FFT (unnormalized). sign = -1 forward, +1 inverse.
+      function fft2(re, im, sign) {
+        const n = re.length;
+        for (let i = 1, j = 0; i < n; i++) {
+          let bit = n >> 1;
+          for (; j & bit; bit >>= 1) j ^= bit;
+          j ^= bit;
+          if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+        }
+        const { cos, sin } = twiddles(n);
+        for (let size = 2; size <= n; size <<= 1) {
+          const half = size >> 1, step = n / size;
+          for (let start = 0; start < n; start += size) {
+            for (let j = 0; j < half; j++) {
+              const wr = cos[j * step], wi = sign * sin[j * step];
+              const a = start + j, b = a + half;
+              const tr = wr * re[b] - wi * im[b], ti = wr * im[b] + wi * re[b];
+              re[b] = re[a] - tr; im[b] = im[a] - ti;
+              re[a] += tr; im[a] += ti;
+            }
+          }
+        }
+      }
+
+      // Bluestein plan for lengths that are not a power of two.
+      const planCache = new Map();
+      function bluesteinPlan(n) {
+        let plan = planCache.get(n);
+        if (plan) return plan;
+        let m = 1;
+        while (m < 2 * n - 1) m <<= 1;
+        const wr = new Float64Array(n), wi = new Float64Array(n);  // w[k] = e^{-iπk²/n}
+        for (let k = 0; k < n; k++) {
+          const angle = Math.PI * ((k * k) % (2 * n)) / n;
+          wr[k] = Math.cos(angle); wi[k] = -Math.sin(angle);
+        }
+        const br = new Float64Array(m), bi = new Float64Array(m);   // conj(w), wrapped for circular convolution
+        br[0] = wr[0]; bi[0] = -wi[0];
+        for (let k = 1; k < n; k++) { br[k] = br[m - k] = wr[k]; bi[k] = bi[m - k] = -wi[k]; }
+        fft2(br, bi, -1);
+        plan = { m, wr, wi, br, bi };
+        planCache.set(n, plan);
+        return plan;
+      }
+
+      // Exact DFT of any length, O(n log n). Unnormalized: forward Σ x·e^{-2πikn/N}, inverse Σ X·e^{+2πikn/N}.
+      function dft(re, im, sign) {
+        const n = re.length;
+        if ((n & (n - 1)) === 0) {
+          const r = Float64Array.from(re), i = Float64Array.from(im);
+          fft2(r, i, sign);
+          return [r, i];
+        }
+        const { m, wr, wi, br, bi } = bluesteinPlan(n);
+        const s = sign < 0 ? 1 : -1; // inverse = conj(forward(conj(x)))
+        const ar = new Float64Array(m), ai = new Float64Array(m);
+        for (let k = 0; k < n; k++) {
+          const xr = re[k], xi = s * im[k];
+          ar[k] = xr * wr[k] - xi * wi[k];
+          ai[k] = xr * wi[k] + xi * wr[k];
+        }
+        fft2(ar, ai, -1);
+        for (let k = 0; k < m; k++) {
+          const r = ar[k] * br[k] - ai[k] * bi[k];
+          ai[k] = ar[k] * bi[k] + ai[k] * br[k];
+          ar[k] = r;
+        }
+        fft2(ar, ai, 1);
+        const outR = new Float64Array(n), outI = new Float64Array(n);
+        for (let k = 0; k < n; k++) {
+          const r = ar[k] / m, i = ai[k] / m;
+          outR[k] = r * wr[k] - i * wi[k];
+          outI[k] = s * (r * wi[k] + i * wr[k]);
+        }
+        return [outR, outI];
+      }
+
+      // ---------- Geometry ----------
+
+      // How much Natural Earth provides: polygons and coordinates exactly as stored in the file.
+      function sourceStats(geojson) {
+        let polygons = 0, coordinates = 0;
+        const polygon = rings => { polygons++; for (const r of rings || []) coordinates += r.length; };
+        (function visit(g) {
+          if (!g) return;
+          if (g.type === 'FeatureCollection') (g.features || []).forEach(visit);
+          else if (g.type === 'Feature') visit(g.geometry);
+          else if (g.type === 'GeometryCollection') (g.geometries || []).forEach(visit);
+          else if (g.type === 'Polygon') polygon(g.coordinates);
+          else if (g.type === 'MultiPolygon') (g.coordinates || []).forEach(polygon);
+        })(geojson);
+        return { polygons, coordinates };
+      }
+
+      // Outer ring of every polygon, without repeated or closing points.
+      function outerRings(geojson) {
+        const rings = [];
+        (function visit(g) {
+          if (!g) return;
+          if (g.type === 'FeatureCollection') (g.features || []).forEach(visit);
+          else if (g.type === 'Feature') visit(g.geometry);
+          else if (g.type === 'GeometryCollection') (g.geometries || []).forEach(visit);
+          else if (g.type === 'Polygon' && g.coordinates?.[0]) rings.push(g.coordinates[0]);
+          else if (g.type === 'MultiPolygon') (g.coordinates || []).forEach(p => p?.[0] && rings.push(p[0]));
+        })(geojson);
+        return rings.map(ring => {
+          const pts = [];
+          for (const p of ring) {
+            if (!Array.isArray(p) || !Number.isFinite(p[0]) || !Number.isFinite(p[1])) continue;
+            const last = pts[pts.length - 1];
+            if (!last || last[0] !== p[0] || last[1] !== p[1]) pts.push([p[0], p[1]]);
+          }
+          if (pts.length > 1 && pts[0][0] === pts.at(-1)[0] && pts[0][1] === pts.at(-1)[1]) pts.pop();
+          // Keep longitudes continuous along the ring (dateline safety).
+          for (let i = 1; i < pts.length; i++) {
+            while (pts[i][0] - pts[i - 1][0] > 180) pts[i][0] -= 360;
+            while (pts[i][0] - pts[i - 1][0] < -180) pts[i][0] += 360;
+          }
+          return pts;
+        }).filter(r => r.length >= 3);
+      }
+
+      const signedArea = pts => {
+        let a = 0;
+        for (let i = 0; i < pts.length; i++) { const p = pts[i], q = pts[(i + 1) % pts.length]; a += p[0] * q[1] - q[0] * p[1]; }
+        return a / 2;
+      };
+      const mean = (pts, axis) => pts.reduce((s, p) => s + p[axis], 0) / pts.length;
+
+      // Lambert azimuthal equal-area projection; returns screen coordinates (y grows downward).
+      function laea(lon, lat, lon0, lat0) {
+        const r = Math.PI / 180, l = (lon - lon0) * r, p = lat * r, p0 = lat0 * r;
+        const k = Math.sqrt(2 / (1 + Math.sin(p0) * Math.sin(p) + Math.cos(p0) * Math.cos(p) * Math.cos(l)));
+        return [k * Math.cos(p) * Math.sin(l), -k * (Math.cos(p0) * Math.sin(p) - Math.sin(p0) * Math.cos(p) * Math.cos(l))];
+      }
+
+      // `count` points evenly spaced along the closed ring, starting at its first vertex.
+      function resample(pts, count) {
+        const cum = [0];
+        for (let i = 0; i < pts.length; i++) {
+          const p = pts[i], q = pts[(i + 1) % pts.length];
+          cum.push(cum[i] + Math.hypot(q[0] - p[0], q[1] - p[1]));
+        }
+        const perimeter = cum[pts.length];
+        const x = new Float64Array(count), y = new Float64Array(count);
+        let seg = 0;
+        for (let j = 0; j < count; j++) {
+          const d = perimeter * j / count;
+          while (seg < pts.length - 1 && cum[seg + 1] <= d) seg++;
+          const p = pts[seg], q = pts[(seg + 1) % pts.length];
+          const f = (d - cum[seg]) / ((cum[seg + 1] - cum[seg]) || 1);
+          x[j] = p[0] + f * (q[0] - p[0]);
+          y[j] = p[1] + f * (q[1] - p[1]);
+        }
+        return { x, y };
+      }
+
+      // Split `total` samples by perimeter (largest remainder), with a floor per ring.
+      function allocate(perimeters, total) {
+        const floor = Math.min(MIN_RING_SAMPLES, Math.floor(total / perimeters.length));
+        const free = total - floor * perimeters.length;
+        const sum = perimeters.reduce((a, b) => a + b, 0);
+        const quotas = perimeters.map(p => free * p / sum);
+        const counts = quotas.map(q => floor + Math.floor(q));
+        let left = total - counts.reduce((a, b) => a + b, 0);
+        quotas.map((q, i) => [q % 1, i]).sort((a, b) => b[0] - a[0]).forEach(([, i]) => { if (left > 0) { counts[i]++; left--; } });
+        return counts;
+      }
+
+      // ---------- Model ----------
+
+      // Fourier circles for one or more closed curves, each given as evenly spaced samples
+      // centred on the origin. Every curve gets its own DFT, so its partial sums never jump.
+      function modelFromSamples(samples, outlines) {
+        outlines = outlines || samples.map(({ x, y }) => Array.from(x, (v, i) => [v, y[i]]));
+        const terms = [];
+        const rings = samples.map(({ x, y }, ringIndex) => {
+          const count = x.length;
+          const [re, im] = dft(x, y, -1);
+          for (let k = 1; k < count; k++) {
+            const cre = re[k] / count, cim = im[k] / count;
+            terms.push({ ring: ringIndex, k, freq: k <= count / 2 ? k : k - count, re: cre, im: cim, amp: Math.hypot(cre, cim) });
+          }
+          return { outline: outlines[ringIndex], count, x, y, anchor: { x: re[0] / count, y: im[0] / count }, terms: [] };
+        });
+        // Largest circles first, across all curves.
+        terms.sort((a, b) => b.amp - a.amp || Math.abs(a.freq) - Math.abs(b.freq) || a.ring - b.ring);
+        terms.forEach(t => rings[t.ring].terms.push(t));
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const o of outlines) for (const [x, y] of o) {
+          minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+        }
+        const width = maxX - minX, height = maxY - minY;
+        const total = rings.reduce((s, r) => s + r.count, 0);
+        return { rings, terms, total, maxN: terms.length, width, height, diagonal: Math.hypot(width, height) };
+      }
+
+      function prepare(geojson) {
+        const source = sourceStats(geojson);
+        let rings = outerRings(geojson);
+        if (!rings.length) throw new Error('El GeoJSON no contiene contornos válidos.');
+
+        // 1. Keep the main landmass and its large islands. Tiny islets would only add noise.
+        const areaOf = r => Math.abs(signedArea(r)) * Math.cos(mean(r, 1) * Math.PI / 180);
+        rings = rings.map(r => ({ r, a: areaOf(r) })).sort((a, b) => b.a - a.a);
+        const mainArea = rings[0].a;
+        rings = rings.filter(o => o.a >= mainArea * MIN_ISLAND_RATIO).map(o => o.r);
+
+        // 2. Bring every ring to the main ring's longitude frame, then project around their centre.
+        const refLon = mean(rings[0], 0);
+        rings = rings.map(r => { const shift = 360 * Math.round((refLon - mean(r, 0)) / 360); return r.map(([lon, lat]) => [lon + shift, lat]); });
+        let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
+        for (const r of rings) for (const [lon, lat] of r) {
+          minLon = Math.min(minLon, lon); maxLon = Math.max(maxLon, lon);
+          minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat);
+        }
+        const lon0 = (minLon + maxLon) / 2, lat0 = (minLat + maxLat) / 2;
+        rings = rings.map(r => r.map(([lon, lat]) => laea(lon, lat, lon0, lat0)));
+
+        // 3. Normalize: bounding box centred on the origin, longest side = 1.
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const r of rings) for (const [x, y] of r) {
+          minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+        }
+        const unit = Math.max(maxX - minX, maxY - minY);
+        if (!(unit > 0)) throw new Error('La frontera tiene tamaño cero.');
+        const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+        rings = rings.map(r => r.map(([x, y]) => [(x - cx) / unit, (y - cy) / unit]));
+
+        // 4. Same direction for every ring (clockwise on screen), starting at its northernmost point.
+        rings = rings.map(r => {
+          if (signedArea(r) < 0) r = r.slice().reverse();
+          let top = 0;
+          for (let i = 1; i < r.length; i++) if (r[i][1] < r[top][1]) top = i;
+          return r.slice(top).concat(r.slice(0, top));
+        });
+
+        // 5. Sample each closed ring uniformly and find its circles.
+        const perimeters = rings.map(r => r.reduce((s, p, i) => { const q = r[(i + 1) % r.length]; return s + Math.hypot(q[0] - p[0], q[1] - p[1]); }, 0));
+        const counts = allocate(perimeters, SAMPLE_COUNT);
+        const model = modelFromSamples(rings.map((r, i) => resample(r, counts[i])), rings);
+        model.source = source;
+        return model;
+      }
+
+      // Curves made of the N largest circles. Rings whose circle count did not change are reused.
+      function createApproximation(model) {
+        const cache = model.rings.map(() => ({ count: -1, x: null, y: null, errorSum: 0 }));
+        return function approximate(n) {
+          n = Math.max(0, Math.min(model.maxN, Math.round(n)));
+          const counts = model.rings.map(() => 0);
+          for (let i = 0; i < n; i++) counts[model.terms[i].ring]++;
+          let errorSum = 0;
+          model.rings.forEach((ring, r) => {
+            const c = cache[r];
+            if (c.count !== counts[r]) {
+              const re = new Float64Array(ring.count), im = new Float64Array(ring.count);
+              re[0] = ring.anchor.x; im[0] = ring.anchor.y;
+              for (let i = 0; i < counts[r]; i++) { const t = ring.terms[i]; re[t.k] = t.re; im[t.k] = t.im; }
+              [c.x, c.y] = dft(re, im, 1);
+              c.count = counts[r];
+              c.errorSum = 0;
+              for (let j = 0; j < ring.count; j++) c.errorSum += Math.hypot(c.x[j] - ring.x[j], c.y[j] - ring.y[j]);
+            }
+            errorSum += c.errorSum;
+          });
+          return {
+            n, counts,
+            curves: cache.map(c => ({ x: c.x, y: c.y })),
+            // Mean distance between original and approximated samples, as % of the map diagonal.
+            error: errorSum / model.total / model.diagonal * 100
+          };
+        };
+      }
+
+      // Time t is measured in laps. Position of t on a ring's sample grid: sample j plus a fraction f.
+      function samplePosition(count, t) {
+        const u = (t - Math.floor(t)) * count, j = Math.min(count - 1, Math.floor(u));
+        return { j, f: u - j };
+      }
+
+      // Point where the drawn curve ends at time t (between samples j and j + 1).
+      function curvePoint(curve, count, t) {
+        const { j, f } = samplePosition(count, t), k = (j + 1) % count;
+        return { x: curve.x[j] + f * (curve.x[k] - curve.x[j]), y: curve.y[j] + f * (curve.y[k] - curve.y[j]), j };
+      }
+
+      // Walks the N largest circles at time t (continuous, so motion stays smooth at any speed).
+      // visit(ring, cx, cy, radius, nx, ny) per circle. Returns the end of each ring's chain.
+      function walkChain(model, n, t, visit) {
+        const phase = TAU * (t - Math.floor(t));
+        const tips = model.rings.map(r => ({ x: r.anchor.x, y: r.anchor.y }));
+        for (let i = 0; i < n; i++) {
+          const term = model.terms[i], tip = tips[term.ring];
+          const angle = phase * term.freq;
+          const cos = Math.cos(angle), sin = Math.sin(angle);
+          const nx = tip.x + term.re * cos - term.im * sin, ny = tip.y + term.re * sin + term.im * cos;
+          if (visit) visit(term.ring, tip.x, tip.y, term.amp, nx, ny);
+          tip.x = nx; tip.y = ny;
+        }
+        return tips;
+      }
+
+      // Slider (0–100 %) → number of circles, following the four precision modes.
+      function precisionTarget(percent, maxN) {
+        const p = Math.max(0, Math.min(100, Number(percent)));
+        const between = (a, b, f) => Math.round(a * Math.pow(b / a, f));
+        let n, mode;
+        if (p < 20) { n = 16; mode = 'Modo Dibujo'; }
+        else if (p < 50) { n = between(64, 256, (p - 20) / 30); mode = 'Modo Boceto'; }
+        else if (p < 80) { n = between(512, 1024, (p - 50) / 30); mode = 'Modo Detalle'; }
+        else if (p < 100) { n = between(2048, 4096, (p - 80) / 20); mode = 'Modo 0 Error'; }
+        else { n = maxN; mode = 'Modo 0 Error'; }
+        return { n: Math.min(n, maxN), mode };
+      }
+
+      return { SAMPLE_COUNT, dft, prepare, modelFromSamples, createApproximation, curvePoint, walkChain, precisionTarget };
+    })();
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.11.11/lib/p5.min.js"></script>
+  <script>
+    (() => {
+      'use strict';
+      const PERIOD = 12;      // seconds per lap at 1×
+      const RAMP_END = 0.8;   // N reaches the slider value at 80 % of the first lap
+      const TAU = Math.PI * 2;
+      const COLORS = {
+        bg: '#0a0a0a',
+        accent: '#ffc35a',
+        circle: 'rgba(255, 255, 255, 0.3)',
+        arm: 'rgba(255, 255, 255, 0.5)',
+        original: 'rgba(255, 255, 255, 0.3)'
+      };
+      const COUNTRIES = {
+        colombia: 'Colombia', mexico: 'México', spain: 'España', 'united-states': 'Estados Unidos',
+        argentina: 'Argentina', japan: 'Japón', italy: 'Italia'
+      };
+      const $ = id => document.getElementById(id);
+      const number = new Intl.NumberFormat('es-CO');
+      const mobile = matchMedia('(max-width: 860px), (pointer: coarse)');
+      const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+
+      const state = {
+        slug: 'colombia', model: null, approximate: null, frame: null,
+        t: 0, playing: true, speed: 1, percent: 50, target: 512, mode: 'Modo Detalle',
+        showCircles: true, showOriginal: true,
+        raf: 0, lastPaint: 0, loadToken: 0, controller: null, cache: new Map(),
+        p5: null, view: null, outlinePath: null, hudText: {}
+      };
+
+      // ---------- Drawing (shared by the main stage and the explainer demos) ----------
+
+      function outlinePath(model, view) {
+        const path = new Path2D();
+        for (const ring of model.rings) {
+          ring.outline.forEach(([x, y], i) => {
+            const px = view.cx + x * view.scale, py = view.cy + y * view.scale;
+            if (i === 0) path.moveTo(px, py); else path.lineTo(px, py);
+          });
+          path.closePath();
+        }
+        return path;
+      }
+
+      // Draws the original border, the N-circle trace (from the start of the lap up to the
+      // pen), the epicycles and the pens. During the first lap (t < 1) the trace grows.
+      function drawScene(ctx, { model, frame, n, t, view, showCircles = true, showOriginal = true, showTips = true, outline = null, traceWidth = 2 }) {
+        const { scale, cx, cy } = view;
+        const X = v => cx + v * scale, Y = v => cy + v * scale;
+        const closed = t >= 1;
+
+        if (showOriginal) {
+          ctx.save();
+          ctx.setLineDash([3, 5]);
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = COLORS.original;
+          ctx.stroke(outline || outlinePath(model, view));
+          ctx.restore();
+        }
+
+        const tips = model.rings.map((ring, r) => frame.counts[r] ? Fourier.curvePoint(frame.curves[r], ring.count, t) : null);
+        ctx.lineWidth = traceWidth;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = COLORS.accent;
+        ctx.beginPath();
+        model.rings.forEach((ring, r) => {
+          if (!tips[r]) return;
+          const { x, y } = frame.curves[r];
+          const last = closed ? ring.count - 1 : tips[r].j;
+          ctx.moveTo(X(x[0]), Y(y[0]));
+          for (let j = 1; j <= last; j++) ctx.lineTo(X(x[j]), Y(y[j]));
+          if (closed) ctx.closePath();
+          else ctx.lineTo(X(tips[r].x), Y(tips[r].y));
+        });
+        ctx.stroke();
+
+        // Epicycles: one chain per ring, anchored at the ring's centre (the constant term).
+        if (showCircles) {
+          const circles = new Path2D(), arms = new Path2D();
+          Fourier.walkChain(model, n, t, (r, x, y, radius, nx, ny) => {
+            const px = X(x), py = Y(y), rr = radius * scale;
+            if (rr < 0.4) return;
+            if (rr >= 0.75) { circles.moveTo(px + rr, py); circles.arc(px, py, rr, 0, TAU); }
+            arms.moveTo(px, py);
+            arms.lineTo(X(nx), Y(ny));
+          });
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = COLORS.circle;
+          ctx.stroke(circles);
+          ctx.strokeStyle = COLORS.arm;
+          ctx.stroke(arms);
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+          model.rings.forEach((ring, r) => {
+            if (!tips[r]) return;
+            ctx.beginPath(); ctx.arc(X(ring.anchor.x), Y(ring.anchor.y), 2, 0, TAU); ctx.fill();
+          });
+        }
+
+        // Pens, placed exactly where the trace ends.
+        if (showTips) {
+          tips.forEach(tip => {
+            if (!tip) return;
+            const px = X(tip.x), py = Y(tip.y);
+            ctx.fillStyle = 'rgba(255, 195, 90, 0.2)';
+            ctx.beginPath(); ctx.arc(px, py, 8, 0, TAU); ctx.fill();
+            ctx.fillStyle = COLORS.accent;
+            ctx.beginPath(); ctx.arc(px, py, 3.5, 0, TAU); ctx.fill();
+          });
+        }
+      }
+
+      // ---------- Main animation ----------
+
+      // Starts with one circle and grows (log scale) to the target before the first lap closes.
+      function currentN() {
+        if (state.t >= RAMP_END) return state.target;
+        return Math.max(1, Math.min(state.target, Math.round(Math.pow(state.target, state.t / RAMP_END))));
+      }
+
+      function frameFor(n) {
+        if (!state.frame || state.frame.n !== n) state.frame = state.approximate(n);
+        return state.frame;
+      }
+
+      function tick(now) {
+        state.raf = requestAnimationFrame(tick);
+        const fps = currentN() > 2000 || mobile.matches ? 30 : 60;
+        if (state.lastPaint && now - state.lastPaint < 1000 / fps - 2) return;
+        const dt = state.lastPaint ? Math.min(0.1, (now - state.lastPaint) / 1000) : 0;
+        state.lastPaint = now;
+        state.t += dt * state.speed / PERIOD;
+        if (state.t >= 2) state.t -= 1; // keep precision; any t ≥ 1 means the first lap is done
+        state.p5.redraw();
+      }
+
+      function play() {
+        state.playing = true;
+        if (!state.raf && state.model && !document.hidden && !$('about').open) { state.lastPaint = 0; state.raf = requestAnimationFrame(tick); }
+        updatePlayButton();
+      }
+      function stopClock() { cancelAnimationFrame(state.raf); state.raf = 0; }
+      function pause() { state.playing = false; stopClock(); updatePlayButton(); }
+      function restart() {
+        state.t = 0;
+        if (state.p5) state.p5.redraw();
+        play();
+      }
+
+      // The map fills 80 % of the canvas, but never runs under the on-canvas text (matters on phones).
+      function viewFor(width, height) {
+        const m = state.model, stage = $('canvas-host').getBoundingClientRect();
+        const top = $('hud-top').getBoundingClientRect().bottom - stage.top + 16;
+        const bottom = stage.bottom - $('hud-bottom').getBoundingClientRect().top + 16;
+        const free = Math.max(height * 0.5, height - top - bottom);
+        const scale = Math.min(0.8 * Math.min(width / m.width, height / m.height), (width - 32) / m.width, free / m.height);
+        return { scale, cx: width / 2, cy: (top + height - bottom) / 2, width, height };
+      }
+
+      function render() {
+        const p = state.p5, ctx = p.drawingContext;
+        ctx.fillStyle = COLORS.bg;
+        ctx.fillRect(0, 0, p.width, p.height);
+        const model = state.model;
+        if (!model) return;
+        if (!state.view || state.view.width !== p.width || state.view.height !== p.height) {
+          state.view = viewFor(p.width, p.height);
+          state.outlinePath = outlinePath(model, state.view);
+        }
+        const n = currentN(), frame = frameFor(n);
+        drawScene(ctx, {
+          model, frame, n, t: state.t, view: state.view,
+          showCircles: state.showCircles, showOriginal: state.showOriginal, outline: state.outlinePath
+        });
+        setHud('n', number.format(n));
+        setHud('target', n === state.target ? '' : `/ ${number.format(state.target)}`);
+        setHud('error', formatError(frame.error));
+      }
+
+      // ---------- UI ----------
+
+      function setHud(key, text) {
+        if (state.hudText[key] === text) return;
+        state.hudText[key] = text;
+        $({ n: 'n-value', target: 'n-target', error: 'error-value' }[key]).textContent = text;
+      }
+      function formatError(e) {
+        if (!Number.isFinite(e)) return '—';
+        if (e > 1e-9 && e < 0.005) return '< 0,01';
+        return e.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+      function setFill(input) {
+        const f = (input.value - input.min) / (input.max - input.min);
+        input.style.setProperty('--fill', `calc(8px + (100% - 16px) * ${f})`);
+      }
+      function updatePlayButton() {
+        $('play-label').textContent = state.playing ? 'Pausar' : 'Reproducir';
+        $('icon-pause').hidden = !state.playing;
+        $('icon-play').hidden = state.playing;
+      }
+      function setControlsEnabled(enabled) {
+        $('play-button').disabled = !enabled;
+        $('reset-button').disabled = !enabled;
+      }
+      function showMessage(title, detail = '', retry = false) {
+        $('message').hidden = false;
+        $('message-title').textContent = title;
+        $('message-detail').textContent = detail;
+        $('retry-button').hidden = !retry;
+      }
+
+      function updatePrecision() {
+        const input = $('precision');
+        state.percent = Number(input.value);
+        const { n, mode } = Fourier.precisionTarget(state.percent, state.model ? state.model.maxN : Fourier.SAMPLE_COUNT - 1);
+        state.target = n;
+        state.mode = mode;
+        $('precision-value').textContent = `${state.percent} %`;
+        $('mode-label').textContent = mode;
+        $('target-label').textContent = `${number.format(n)} círculos`;
+        $('target-label').title = state.percent === 100 ? 'Todas las frecuencias: cada punto de la frontera menos el centro fijo de cada contorno' : '';
+        input.setAttribute('aria-valuetext', `${state.percent} %, ${mode}, ${n} círculos`);
+        setFill(input);
+        if (state.p5 && !state.playing) state.p5.redraw();
+      }
+
+      async function loadCountry(slug) {
+        const token = ++state.loadToken;
+        state.controller?.abort();
+        state.controller = new AbortController();
+        stopClock();
+        state.slug = slug;
+        state.model = null; state.approximate = null; state.frame = null; state.view = null; state.outlinePath = null;
+        state.hudText = {};
+        $('country-name').textContent = COUNTRIES[slug] || slug;
+        $('country-meta').innerHTML = '&nbsp;';
+        $('n-value').textContent = '—'; $('n-target').textContent = ''; $('error-value').textContent = '—';
+        setControlsEnabled(false);
+        showMessage('Cargando frontera…');
+        if (state.p5) state.p5.redraw();
+
+        const timer = setTimeout(() => state.controller.abort(), 15000);
+        try {
+          let model = state.cache.get(slug);
+          if (!model) {
+            const response = await fetch(`./geojson/${slug}.geojson`, { signal: state.controller.signal });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const geojson = await response.json();
+            model = Fourier.prepare(geojson);
+            state.cache.set(slug, model);
+          }
+          if (token !== state.loadToken) return;
+          state.model = model;
+          state.approximate = Fourier.createApproximation(model);
+          const rings = model.rings.length;
+          $('country-meta').textContent = `${rings === 1 ? '1 contorno' : `${rings} contornos`} · ${number.format(model.total)} puntos`;
+          $('message').hidden = true;
+          setControlsEnabled(true);
+          updatePrecision();
+          restart();
+          if ($('about').open) drawCountryFigures();
+        } catch (error) {
+          if (token !== state.loadToken) return;
+          console.error(error);
+          const local = location.protocol === 'file:';
+          showMessage('País no disponible',
+            local ? 'Abre la página desde un servidor local (por ejemplo: python3 -m http.server) para poder leer /geojson/.'
+                  : 'No se pudo cargar la frontera. Prueba con otro país o vuelve a intentarlo.', true);
+          if (state.p5) state.p5.redraw();
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+
+      // ---------- "¿Qué es esto?" screen ----------
+
+      const about = { wasPlaying: false, raf: 0, last: 0, demos: [], visible: new Set(), observer: null, built: false };
+
+      // Canvas sized to its CSS box at the device's pixel ratio.
+      function fitCanvas(canvas) {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2), w = canvas.clientWidth, h = canvas.clientHeight;
+        const W = Math.max(1, Math.round(w * dpr)), H = Math.max(1, Math.round(h * dpr));
+        if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.fillStyle = COLORS.bg;
+        ctx.fillRect(0, 0, w, h);
+        return { ctx, w, h };
+      }
+      const fitView = (model, w, h, fill = 0.8) => ({ scale: fill * Math.min(w / model.width, h / model.height), cx: w / 2, cy: h / 2 });
+
+      // Closed curve from evenly spaced samples, centred and scaled to a unit box.
+      function shapeModel(count, fn) {
+        const x = new Float64Array(count), y = new Float64Array(count);
+        for (let j = 0; j < count; j++) [x[j], y[j]] = fn(TAU * j / count);
+        const minX = Math.min(...x), maxX = Math.max(...x), minY = Math.min(...y), maxY = Math.max(...y);
+        const unit = Math.max(maxX - minX, maxY - minY);
+        for (let j = 0; j < count; j++) { x[j] = (x[j] - (minX + maxX) / 2) / unit; y[j] = (y[j] - (minY + maxY) / 2) / unit; }
+        return Fourier.modelFromSamples([{ x, y }]);
+      }
+
+      // A small animated scene that runs the same algorithm and drawing code as the main stage.
+      function createDemo(canvas, model, { n, period, fill }) {
+        const approximate = Fourier.createApproximation(model);
+        const demo = {
+          canvas, n, t: 0, frame: null,
+          setN(value) { demo.n = value; demo.t = reducedMotion.matches ? 1 : 0; demo.draw(); },
+          draw() {
+            const { ctx, w, h } = fitCanvas(canvas);
+            if (!demo.frame || demo.frame.n !== demo.n) demo.frame = approximate(demo.n);
+            drawScene(ctx, { model, frame: demo.frame, n: demo.n, t: demo.t, view: fitView(model, w, h, fill) });
+          },
+          step(dt) { demo.t += dt / period; if (demo.t >= 2) demo.t -= 1; demo.draw(); }
+        };
+        return demo;
+      }
+
+      function buildAbout() {
+        if (about.built) return;
+        about.built = true;
+        const circle = shapeModel(64, a => [Math.cos(a), Math.sin(a)]);
+        const heart = shapeModel(256, a => [16 * Math.sin(a) ** 3, -(13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a))]);
+        const one = createDemo($('demo-one'), circle, { n: 1, period: 5, fill: 0.7 });
+        const heartDemo = createDemo($('demo-heart'), heart, { n: Number($('heart-n').value), period: 7, fill: 0.62 });
+        about.demos = [one, heartDemo];
+        const updateHeart = () => {
+          const input = $('heart-n'), n = Number(input.value);
+          heartDemo.setN(n);
+          setFill(input);
+          $('heart-value').textContent = `${n} ${n === 1 ? 'círculo' : 'círculos'} · error ${formatError(heartDemo.frame.error)} %`;
+        };
+        $('heart-n').addEventListener('input', updateHeart);
+        updateHeart();
+        about.observer = new IntersectionObserver(entries => {
+          entries.forEach(e => (e.isIntersecting ? about.visible.add(e.target) : about.visible.delete(e.target)));
+        }, { root: $('about-body') });
+        about.demos.forEach(d => about.observer.observe(d.canvas));
+      }
+
+      // Figures that depend on the selected country.
+      function drawCountryFigures() {
+        const model = state.model;
+        document.querySelectorAll('.js-needs-model').forEach(el => { el.hidden = !model; });
+        document.querySelectorAll('.js-country').forEach(el => { el.textContent = COUNTRIES[state.slug] || state.slug; });
+        if (!model) return;
+
+        // Points along the border (1 of every 32 samples); the start of each ring in yellow.
+        const { ctx, w, h } = fitCanvas($('demo-points'));
+        const view = fitView(model, w, h, 0.84);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+        ctx.lineWidth = 1;
+        ctx.stroke(outlinePath(model, view));
+        let shown = 0;
+        model.rings.forEach(ring => {
+          for (let j = 0; j < ring.count; j += 32, shown++) {
+            ctx.fillStyle = j === 0 ? COLORS.accent : 'rgba(255, 255, 255, 0.85)';
+            ctx.beginPath();
+            ctx.arc(view.cx + ring.x[j] * view.scale, view.cy + ring.y[j] * view.scale, j === 0 ? 5 : 2.2, 0, TAU);
+            ctx.fill();
+          }
+        });
+        $('points-shown').textContent = number.format(shown);
+
+        // The same country with more and more circles.
+        const strip = $('strip');
+        const steps = [1, 4, 16, 128, model.maxN];
+        if (strip.children.length !== steps.length) {
+          strip.innerHTML = steps.map(() => '<div><canvas></canvas><span></span></div>').join('');
+        }
+        const approximate = Fourier.createApproximation(model);
+        steps.forEach((n, i) => {
+          const cell = strip.children[i], canvas = cell.querySelector('canvas');
+          const frame = approximate(n);
+          const { ctx: c, w: cw, h: ch } = fitCanvas(canvas);
+          drawScene(c, { model, frame, n, t: 1, view: fitView(model, cw, ch, 0.82), showCircles: false, showTips: false, traceWidth: 1.5 });
+          cell.querySelector('span').innerHTML = `<b>${i === steps.length - 1 ? 'todos' : `N = ${number.format(n)}`}</b><br>error ${formatError(frame.error)} %`;
+        });
+
+        // How much Natural Earth provides for this country.
+        const s = model.source, rings = model.rings.length;
+        $('credit-data').textContent =
+          `De Natural Earth, esta página solo usa la forma de cada frontera: listas de coordenadas (longitud y latitud). ` +
+          `Para ${COUNTRIES[state.slug]} son ${number.format(s.polygons)} ${s.polygons === 1 ? 'polígono' : 'polígonos'} con ${number.format(s.coordinates)} coordenadas. ` +
+          `Se ${rings === 1 ? 'usa el contorno principal, convertido' : `usan los ${rings} contornos más grandes, convertidos`} en 4.096 puntos; ` +
+          `los puntos, los círculos, el error y la animación se calculan aquí.`;
+      }
+
+      function demoLoop(now) {
+        about.raf = requestAnimationFrame(demoLoop);
+        const dt = about.last ? Math.min(0.1, (now - about.last) / 1000) : 0;
+        about.last = now;
+        about.demos.forEach(d => { if (about.visible.has(d.canvas)) d.step(dt); });
+      }
+
+      function openAbout(section) {
+        const dialog = $('about');
+        if (dialog.open) { if (section) $(section).scrollIntoView({ block: 'start' }); return; }
+        about.wasPlaying = state.playing;
+        if (state.playing) pause();
+        dialog.showModal();
+        buildAbout();
+        $('about-body').focus({ preventScroll: true }); // keyboard scrolls the text; the close button is one Tab away
+        $('about-body').scrollTop = 0;
+        if (section) $(section).scrollIntoView({ block: 'start' });
+        drawCountryFigures();
+        about.demos.forEach(d => { d.t = reducedMotion.matches ? 1 : 0; d.draw(); });
+        about.last = 0;
+        if (!reducedMotion.matches) about.raf = requestAnimationFrame(demoLoop);
+      }
+
+      $('about').addEventListener('close', () => {
+        cancelAnimationFrame(about.raf);
+        about.raf = 0;
+        if (about.wasPlaying || state.playing) play(); // a country may have loaded (and asked to play) meanwhile
+      });
+      $('about').addEventListener('click', e => { if (e.target === $('about')) $('about').close(); });
+      $('about-close').addEventListener('click', () => $('about').close());
+      $('about-done').addEventListener('click', () => $('about').close());
+      document.querySelectorAll('[data-about]').forEach(button => {
+        button.addEventListener('click', () => openAbout(button.dataset.about));
+      });
+      window.addEventListener('resize', () => {
+        if (!$('about').open) return;
+        drawCountryFigures();
+        about.demos.forEach(d => d.draw());
+      });
+
+      // ---------- Events ----------
+
+      $('country-select').addEventListener('change', e => loadCountry(e.target.value));
+      $('precision').addEventListener('input', updatePrecision);
+      $('speed').addEventListener('input', e => {
+        state.speed = Number(e.target.value);
+        $('speed-value').textContent = `${state.speed.toFixed(1).replace('.', ',')}×`;
+        setFill(e.target);
+      });
+      $('play-button').addEventListener('click', () => (state.playing ? pause() : play()));
+      $('reset-button').addEventListener('click', restart);
+      $('retry-button').addEventListener('click', () => loadCountry(state.slug));
+      $('show-circles').addEventListener('change', e => { state.showCircles = e.target.checked; state.p5?.redraw(); });
+      $('show-original').addEventListener('change', e => { state.showOriginal = e.target.checked; state.p5?.redraw(); });
+      document.addEventListener('keydown', e => {
+        if (!state.model || $('about').open || e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input, select, button')) return;
+        if (e.code === 'Space') { e.preventDefault(); state.playing ? pause() : play(); }
+        if (e.code === 'KeyR') restart();
+      });
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) stopClock();
+        else if (state.playing) play();
+      });
+
+      updatePrecision();
+      $('speed').dispatchEvent(new Event('input')); // sync with a value the browser may have restored
+
+      if (typeof p5 === 'undefined') {
+        showMessage('País no disponible', 'No se pudo cargar p5.js. Revisa tu conexión y recarga la página.');
+        return;
+      }
+
+      const host = $('canvas-host');
+      new p5(p => {
+        p.setup = () => {
+          state.p5 = p;
+          p.pixelDensity(Math.min(window.devicePixelRatio || 1, 2));
+          p.createCanvas(Math.max(1, host.clientWidth), Math.max(1, host.clientHeight)).parent(host);
+          p.noLoop();
+          new ResizeObserver(() => {
+            const w = host.clientWidth, h = host.clientHeight;
+            if (w && h && (w !== p.width || h !== p.height)) p.resizeCanvas(w, h);
+          }).observe(host);
+          loadCountry($('country-select').value);
+        };
+        p.draw = render;
+      }, host);
+    })();
+  </script>
+</body>
+</html>
